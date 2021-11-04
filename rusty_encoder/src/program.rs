@@ -102,7 +102,7 @@ impl Program {
         }
     }
 
-    /// Created a temporary terminal hook to clear the terminal. This is mainly done like this for
+    /// Create a temporary terminal hook to clear the terminal. This is mainly done like this for
     /// cross-platform purposes.
     fn clear_console(&self) {
         let terminal = terminal::stdout();

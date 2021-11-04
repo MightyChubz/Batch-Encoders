@@ -70,14 +70,7 @@ impl Program {
                     entry
                         .special_video_params
                         .iter()
-                        .enumerate()
-                        .map(|(index, element)| {
-                            if index == entry.special_video_params.len() {
-                                element.to_string()
-                            } else {
-                                format!("{} ", element)
-                            }
-                        })
+                        .map(|e| format!("{} ", e))
                         .collect::<String>(),
                     entry.audio_library,
                     entry.audio_bitrate

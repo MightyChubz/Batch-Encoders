@@ -1,43 +1,46 @@
 use std::fs::read_dir;
-use std::io::{stdin, stdout, Stdout, Write};
+use std::io::stdin;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use terminal::{Action, Clear, Terminal};
+use terminal::{Action, Clear};
 
 #[derive(Clone)]
-pub(crate) struct QueueEntry<'a> {
+pub(crate) struct QueueEntry {
     pub input: String,
     pub output: String,
-    pub crf: u8,
+    pub crf: String,
     pub video_library: String,
     pub video_container: String,
-    pub special_video_params: Vec<&'a str>,
+    pub special_video_params: Vec<String>,
     pub audio_library: String,
-    pub audio_bitrate: u8,
+    pub audio_bitrate: String,
 }
 
-impl<'a> Default for QueueEntry<'a> {
+impl Default for QueueEntry {
     fn default() -> Self {
         Self {
             input: String::new(),
             output: String::new(),
-            crf: 0,
+            crf: String::new(),
             video_library: String::from("libaom-av1"),
             video_container: String::from("webm"),
-            special_video_params: vec!["-row-mt", "1", "-tiles", "4x4", "-cpu-used", "8"],
+            special_video_params: vec!["-row-mt", "1", "-tiles", "4x4", "-cpu-used", "8"]
+                .iter()
+                .map(|e| e.to_string())
+                .collect(),
             audio_library: String::from("libopus"),
-            audio_bitrate: 128,
+            audio_bitrate: String::from("128K"),
         }
     }
 }
 
 #[derive(Default)]
-pub struct Program<'a> {
-    queue: Vec<QueueEntry<'a>>,
+pub struct Program {
+    queue: Vec<QueueEntry>,
     exit: bool,
 }
 
-impl<'a> Program<'a> {
+impl Program {
     pub fn run() {
         let mut program = Self::default();
 
@@ -46,7 +49,7 @@ impl<'a> Program<'a> {
                 break;
             }
 
-            // program.clear_console();
+            program.clear_console();
             program.print_queue();
             program.take_input();
         }
@@ -57,7 +60,7 @@ impl<'a> Program<'a> {
             for (i, entry) in self.queue.iter().enumerate() {
                 println!(
                     "{}: [INPUT: {}, OUTPUT: {}, CRF: {}, VIDEO_LIBRARY: {}, \
-                VIDEO_CONTAINER: {}, SPECIAL_PARAMS: \"{}\", AUDIO_LIBRARY: {}, AUDIO_BITRATE: {}K]",
+                VIDEO_CONTAINER: {}, SPECIAL_PARAMS: \"{}\", AUDIO_LIBRARY: {}, AUDIO_BITRATE: {}]",
                     i,
                     entry.input,
                     entry.output,
@@ -67,7 +70,14 @@ impl<'a> Program<'a> {
                     entry
                         .special_video_params
                         .iter()
-                        .map(|e| format!("{} ", e))
+                        .enumerate()
+                        .map(|(index, element)| {
+                            if index == entry.special_video_params.len() {
+                                element.to_string()
+                            } else {
+                                format!("{} ", element)
+                            }
+                        })
                         .collect::<String>(),
                     entry.audio_library,
                     entry.audio_bitrate
@@ -84,7 +94,7 @@ impl<'a> Program<'a> {
     }
 
     fn prompt(&self, message: &str) -> String {
-        println!("{} ", message);
+        println!("{}", message);
         let mut input = String::new();
         stdin().read_line(&mut input).unwrap();
         input.trim().to_string()
@@ -137,22 +147,22 @@ impl<'a> Program<'a> {
     }
 
     fn add_file(&mut self) {
-        let files = self.list_dir(Path::new("."));
+        let mut files = self.list_dir(Path::new("."));
         for (i, file) in files.iter().enumerate() {
             println!("{}: {}", i, file);
         }
 
         let input_index = self.prompt_u8("Select input file: ");
-        let input = files[input_index as usize].as_str();
-        let crf = self.prompt_u8("CRF Rating: ");
+        let input = files.remove(input_index as usize);
+        let crf = self.prompt_u8("CRF Rating: ").to_string();
         let video_library = self.prompt("Video Library: ");
         let video_container = self.prompt("Video Filetype: ");
-        // let special_video_params = self.prompt("Enter Special Video Params: ");
+        let special_video_params = self.prompt("Enter Special Video Params: ");
         let audio_library = self.prompt("Audio Library: ");
         let audio_bitrate = self.prompt_u8("Audio Bitrate: ");
 
         let mut entry = QueueEntry {
-            input: input.to_string(),
+            input,
             crf,
             ..Default::default()
         };
@@ -165,21 +175,25 @@ impl<'a> Program<'a> {
             entry.video_container = video_container;
         }
 
-        // if !special_video_params.trim().is_empty() {
-        //     let split: Vec<String> = special_video_params.split(' ').map(|e| e.to_string()).collect();
-        //     entry.special_video_params = ;
-        // }
+        if !special_video_params.trim().is_empty() {
+            entry.special_video_params = special_video_params
+                .split(' ')
+                .map(|e| e.to_string())
+                .collect();
+        } else if entry.video_library != "libaom-av1" {
+            entry.special_video_params = vec![];
+        }
 
         if !audio_library.trim().is_empty() {
             entry.audio_library = audio_library;
         }
 
         if audio_bitrate != 0 {
-            entry.audio_bitrate = audio_bitrate;
+            entry.audio_bitrate = format!("{}K", audio_bitrate);
         }
 
         let mut output = PathBuf::new();
-        output.push(Path::new(input).file_name().unwrap());
+        output.push(Path::new(&entry.input).file_name().unwrap());
         output.set_extension(&entry.video_container);
         entry.output = output.to_str().unwrap().to_string();
 
@@ -199,7 +213,7 @@ impl<'a> Program<'a> {
 
     fn change_crf(&mut self) {
         let selection = self.select();
-        let crf = self.prompt_u8("New CRF Rating: ");
+        let crf = self.prompt_u8("New CRF Rating: ").to_string();
 
         self.queue[selection].crf = crf;
     }
@@ -208,7 +222,7 @@ impl<'a> Program<'a> {
         let queue = self.queue.to_vec();
         for entry in queue.iter() {
             let commands = self.generate_ffmpeg_command(entry);
-            // self.clear_console();
+            self.clear_console();
             Command::new("ffmpeg")
                 .args(commands)
                 .stdout(Stdio::inherit())
@@ -221,29 +235,17 @@ impl<'a> Program<'a> {
     }
 
     fn generate_ffmpeg_command(&self, entry: &QueueEntry) -> Vec<String> {
-        let input = entry.input.to_string();
-        let video_library = entry.video_library.to_string();
-        let crf = entry.crf.to_string();
-        let special_video_params: Vec<String> = entry
-            .special_video_params
-            .iter()
-            .map(|e| e.to_string())
-            .collect();
-        let audio_library = entry.audio_library.to_string();
-        let audio_bitrate = format!("{}K", entry.audio_bitrate);
-        let output = entry.output.to_string();
-
         let mut commands = vec![];
         commands.append(
             &mut [
                 "-hwaccel",
                 "auto",
                 "-i",
-                &input,
+                &entry.input,
                 "-c:v",
-                &video_library,
+                &entry.video_library,
                 "-crf",
-                &crf,
+                &entry.crf,
                 "-b:v",
                 "0",
                 "-pix_fmt",
@@ -252,8 +254,23 @@ impl<'a> Program<'a> {
             .to_vec(),
         );
 
-        // commands.append(&mut special_video_params.iter().map(|e| e.as_str()).collect());
-        commands.append(&mut ["-c:a", &audio_library, "-b:a", &audio_bitrate, &output].to_vec());
+        commands.append(
+            &mut entry
+                .special_video_params
+                .iter()
+                .map(|e| e.as_str())
+                .collect(),
+        );
+        commands.append(
+            &mut [
+                "-c:a",
+                &entry.audio_library,
+                "-b:a",
+                &entry.audio_bitrate,
+                &entry.output,
+            ]
+            .to_vec(),
+        );
 
         commands.iter().map(|e| e.to_string()).collect()
     }

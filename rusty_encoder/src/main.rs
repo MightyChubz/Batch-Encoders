@@ -1,3 +1,7 @@
+use crate::program::Program;
+
+mod program;
+
 fn main() {
-    println!("Hello, world!");
+    Program::run();
 }
